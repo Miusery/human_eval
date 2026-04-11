@@ -1,0 +1,21 @@
+{
+  "current_user": "admin_user",
+  "users": {
+    "admin_user": {
+      "role": "admin"
+    },
+    "test_user_1": {
+      "role": "annotator"
+    },
+    "test_user_2": {
+      "role": "annotator"
+    }
+  },
+  "error_types": [
+    { "id": "entity", "label": "命名实体", "color": "#ffb6c1" },
+    { "id": "grammar", "label": "语法错误", "color": "#add8e6" },
+    { "id": "faithfulness", "label": "忠实度", "color": "#98fb98" },
+    { "id": "fluency", "label": "流畅度", "color": "#ffd700" },
+    { "id": "terminology", "label": "术语错误", "color": "#ffa07a" }
+  ]
+}
