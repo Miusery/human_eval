@@ -534,7 +534,7 @@ new Vue({
         
         // --- Helpers ---
         getTokensText(tokens, start, end) {
-            return tokens.slice(start, end + 1).join('');
+            return tokens.slice(start, end + 1).join(' ');
         },
         getErrorTypeLabel(typeId) {
             const type = this.errorTypes.find(t => t.id === typeId);
