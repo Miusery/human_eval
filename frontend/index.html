@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>机器翻译人工评测系统</title>
+    <!-- 引入样式 -->
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div id="app" v-cloak>
+        <el-container class="app-container">
+            <el-header class="app-header">
+                <div class="logo">MT 评测系统</div>
+                <div class="user-info">
+                    <span v-if="user"><i class="el-icon-user-solid"></i> {{ user.username }} ({{ user.role === 'admin' ? '超级管理员' : '标注员' }})</span>
+                </div>
+            </el-header>
+
+            <el-main class="app-main">
+                <!-- 首页：任务列表 -->
+                <div v-if="currentView === 'home'" class="home-view">
+                    <div class="toolbar">
+                        <el-input
+                            v-model="searchQuery"
+                            placeholder="搜索任务名称、创建人或系统名称"
+                            prefix-icon="el-icon-search"
+                            style="width: 300px; margin-right: 15px;"
+                            clearable>
+                        </el-input>
+                        
+                        <el-button type="primary" icon="el-icon-plus" @click="showCreateTaskDialog = true">新建任务</el-button>
+                    </div>
+
+                    <el-table :data="paginatedTasks" style="width: 100%" border stripe>
+                        <el-table-column prop="id" label="任务ID" width="80"></el-table-column>
+                        <el-table-column prop="name" label="任务名称" min-width="150"></el-table-column>
+                        <el-table-column prop="eval_type" label="评测类型" width="100"></el-table-column>
+                        <el-table-column prop="language_direction" label="语向" width="100"></el-table-column>
+                        <el-table-column label="包含系统" min-width="150">
+                            <template slot-scope="scope">
+                                <el-tag size="mini" v-for="ts in scope.row.task_systems" :key="ts.id" style="margin-right: 5px;">{{ ts.system_name }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="creator" label="创建人" width="120"></el-table-column>
+                        <el-table-column prop="create_time" label="创建时间" width="180"></el-table-column>
+                        <el-table-column label="操作" width="300" fixed="right">
+                            <template slot-scope="scope">
+                                <el-button size="mini" type="primary" @click="startEvaluate(scope.row)">开始评测</el-button>
+                                <el-button size="mini" type="success" @click="exportTask(scope.row)">导出</el-button>
+                                
+                                <el-dropdown style="margin-left: 10px;" v-if="isAdmin || scope.row.creator === user.username">
+                                    <el-button size="mini" type="info" plain>
+                                        管理 <i class="el-icon-arrow-down el-icon--right"></i>
+                                    </el-button>
+                                    <el-dropdown-menu slot="dropdown">
+                                        <el-dropdown-item @click.native="manageTaskSystems(scope.row)">管理译文</el-dropdown-item>
+                                        <el-dropdown-item @click.native="editTask(scope.row)">编辑任务</el-dropdown-item>
+                                        <el-dropdown-item @click.native="openCompareDialog(scope.row)" v-if="isAdmin">双人对比</el-dropdown-item>
+                                        <el-dropdown-item @click.native="deleteTask(scope.row)" style="color: #F56C6C">删除任务</el-dropdown-item>
+                                    </el-dropdown-menu>
+                                </el-dropdown>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+
+                    <div class="pagination-container">
+                        <el-pagination
+                            @current-change="handleTaskPageChange"
+                            :current-page.sync="taskCurrentPage"
+                            :page-size="taskPageSize"
+                            layout="total, prev, pager, next, jumper"
+                            :total="filteredTasks.length">
+                        </el-pagination>
+                    </div>
+                </div>
+
+                <!-- 评测页面 -->
+                <div v-else-if="currentView === 'evaluate'" class="eval-view">
+                    <div class="eval-header">
+                        <el-button icon="el-icon-back" @click="goHome">返回首页</el-button>
+                        <h2>评测任务: {{ currentTask.name }}</h2>
+                        <div class="eval-stats">
+                            进度: <span class="highlight">{{ evalData.current_page }}</span> / {{ evalData.total_pages }}
+                        </div>
+                    </div>
+                    
+                    <div class="eval-content" v-if="evalData && evalData.source">
+                        <!-- 原文展示 -->
+                        <div class="source-panel">
+                            <h3>原文</h3>
+                            <div class="text-box source-text">
+                                <span v-for="(token, index) in evalData.source.tokens" :key="index" class="token source-token">{{ token }}<span v-if="needsSpace(token)">&nbsp;</span></span>
+                            </div>
+                        </div>
+
+                        <!-- 译文列表 (分列布局) -->
+                        <div class="targets-panel">
+                            <div v-for="(target, tIdx) in evalData.targets" :key="target.id" class="target-card">
+                                <h3>译文 - {{ target.system_name }}</h3>
+                                
+                                <div class="target-grid">
+                                    <!-- 第一列：文本区域 (占比最大) -->
+                                    <div class="grid-col text-col">
+                                        <div class="col-header">译文文本</div>
+                                        <div class="text-box target-text" 
+                                             @click="handleTokenClick($event, tIdx)" 
+                                             @contextmenu.prevent="handleContextMenu($event, tIdx)">
+                                            <span v-for="(token, tokenIdx) in target.tokens" 
+                                                  :key="tokenIdx" 
+                                                  :class="getTokenClass(tIdx, tokenIdx)"
+                                                  :style="getTokenStyle(tIdx, tokenIdx)"
+                                                  :data-idx="tokenIdx"
+                                                  class="token target-token">{{ token }}<span v-if="needsSpace(token)" style="pointer-events: none;">&nbsp;</span></span>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 第二列：已标注内容 -->
+                                    <div class="grid-col anno-col">
+                                        <div class="col-header">已标注内容</div>
+                                        <div class="error-tags">
+                                            <div v-if="target.annotation.errors.length === 0" class="empty-text">暂无错误标注</div>
+                                            <div v-else class="tags-container">
+                                                <div v-for="(err, errIdx) in target.annotation.errors" 
+                                                     :key="errIdx" 
+                                                     class="error-tag"
+                                                     :style="{ backgroundColor: getSeverityColor(err.severity) }"
+                                                     @click="toggleSeverity(tIdx, errIdx)">
+                                                    <span class="err-text">"{{ getTokensText(target.tokens, err.start_idx, err.end_idx) }}"</span>
+                                                    <span class="err-type">[{{ getErrorTypeLabel(err.error_type) }}]</span>
+                                                    <i class="el-icon-close" @click.stop="removeError(tIdx, errIdx)"></i>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 第三列：得分 -->
+                                    <div class="grid-col score-col">
+                                        <div class="col-header">得分</div>
+                                        <div class="score-inputs">
+                                            <div class="input-group" v-if="currentTask.eval_type === 'DA'" style="display: flex; flex-direction: column; align-items: flex-start; gap: 5px;">
+                                                <label style="white-space: nowrap;">DA 得分 (0-100):</label>
+                                                <el-input type="number" v-model="target.annotation.da_score" min="0" max="100" @change="saveAnnotation(tIdx)" size="small" placeholder="空" style="width: 120px;"></el-input>
+                                            </div>
+                                            <div class="input-group" v-if="currentTask.eval_type === 'RR'" :style="currentTask.eval_type === 'RR' ? 'display: flex; flex-direction: column; align-items: flex-start; gap: 5px;' : 'margin-top: 15px; display: flex; flex-direction: column; align-items: flex-start; gap: 5px;'">
+                                                <label style="white-space: nowrap;">RR 排序:</label>
+                                                <el-input-number v-model="target.annotation.rr_rank" :min="1" @change="saveAnnotation(tIdx)" size="small" style="width: 120px;"></el-input-number>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 第四列：备注 -->
+                                    <div class="grid-col remark-col">
+                                        <div class="col-header">备注</div>
+                                        <div class="remark-input">
+                                            <el-input type="textarea" v-model="target.annotation.remark" placeholder="添加备注..." @input="saveAnnotation(tIdx)" @blur="saveAnnotation(tIdx)" :rows="4"></el-input>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 评测页底部分页 -->
+                    <div class="eval-pagination">
+                        <el-pagination
+                            background
+                            layout="prev, pager, next"
+                            :total="evalData.total_pages"
+                            :page-size="1"
+                            :current-page.sync="evalData.current_page"
+                            @current-change="loadEvalPage">
+                        </el-pagination>
+                        <div class="pagination-legend">
+                            <span class="legend-item"><span class="dot green"></span> 已标注</span>
+                            <span class="legend-item"><span class="dot red"></span> 未标注</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 右键错误类型菜单 -->
+                    <ul v-show="contextMenu.visible" :style="{left: contextMenu.x + 'px', top: contextMenu.y + 'px'}" class="context-menu">
+                        <li v-for="type in errorTypes" :key="type.id" @click="addErrorAnnotation(type.id)">
+                            <span class="color-box" :style="{backgroundColor: type.color}"></span> {{ type.label }}
+                        </li>
+                    </ul>
+                </div>
+            </el-main>
+        </el-container>
+
+        <!-- 新建任务弹窗 -->
+        <el-dialog title="新建任务" :visible.sync="showCreateTaskDialog" width="600px">
+            <el-form :model="taskForm" label-width="100px">
+                <el-form-item label="任务名称" required>
+                    <el-input v-model="taskForm.name"></el-input>
+                </el-form-item>
+                <el-form-item label="评测类型" required>
+                    <el-radio-group v-model="taskForm.eval_type">
+                        <el-radio label="RR">RR (排序)</el-radio>
+                        <el-radio label="DA">DA (打分)</el-radio>
+                    </el-radio-group>
+                </el-form-item>
+                <el-form-item label="语向" required>
+                    <el-input v-model="taskForm.language_direction" placeholder="例如：ZH-EN"></el-input>
+                </el-form-item>
+                <el-form-item label="原文文件" required>
+                    <el-upload
+                        class="upload-demo"
+                        action=""
+                        :auto-upload="false"
+                        :on-change="handleSourceFileChange"
+                        :limit="1"
+                        :file-list="sourceFileList"
+                        accept=".txt">
+                        <el-button size="small" type="primary" plain>点击选择原文</el-button>
+                    </el-upload>
+                </el-form-item>
+                <el-form-item label="译文文件" required>
+                    <div v-for="(target, index) in taskForm.targets" :key="index" style="display:flex; gap:10px; margin-bottom:10px; align-items:center;">
+                        <el-input v-model="target.system_name" placeholder="输入系统名称" size="small" style="width: 150px;"></el-input>
+                        
+                        <el-upload
+                            action=""
+                            :auto-upload="false"
+                            :on-change="(file, fileList) => handleTargetFileChange(file, fileList, index)"
+                            :show-file-list="false"
+                            accept=".txt">
+                            <el-button size="small" :type="target.file ? 'success' : 'primary'" plain>
+                                {{ target.file ? target.file.name : '选择译文' }}
+                            </el-button>
+                        </el-upload>
+
+                        <el-button type="danger" icon="el-icon-delete" circle size="small" @click="removeTarget(index)" v-if="taskForm.targets.length > 1"></el-button>
+                    </div>
+                    <el-button type="primary" size="small" plain @click="addTarget">添加译文</el-button>
+                </el-form-item>
+            </el-form>
+            <span slot="footer" class="dialog-footer">
+                <el-button @click="showCreateTaskDialog = false">取消</el-button>
+                <el-button type="primary" @click="submitCreateTask" :loading="uploading">确定上传</el-button>
+            </span>
+        </el-dialog>
+
+        <!-- 编辑任务弹窗 -->
+        <el-dialog title="编辑任务" :visible.sync="showEditTaskDialog" width="400px">
+            <el-form :model="editTaskForm" label-width="100px">
+                <el-form-item label="任务名称" required>
+                    <el-input v-model="editTaskForm.name"></el-input>
+                </el-form-item>
+                <el-form-item label="评测类型" required>
+                    <el-radio-group v-model="editTaskForm.eval_type">
+                        <el-radio label="RR">RR (排序)</el-radio>
+                        <el-radio label="DA">DA (打分)</el-radio>
+                    </el-radio-group>
+                </el-form-item>
+                <el-form-item label="语向">
+                    <el-input v-model="editTaskForm.language_direction"></el-input>
+                </el-form-item>
+            </el-form>
+            <span slot="footer" class="dialog-footer">
+                <el-button @click="showEditTaskDialog = false">取消</el-button>
+                <el-button type="primary" @click="submitEditTask">确定修改</el-button>
+            </span>
+        </el-dialog>
+
+        <!-- 管理任务译文弹窗 -->
+        <el-dialog title="管理任务译文" :visible.sync="showManageSystemsDialog" width="600px">
+            <el-table :data="currentTaskSystems" border size="small" style="margin-bottom: 20px;">
+                <el-table-column prop="system_name" label="系统名称"></el-table-column>
+                <el-table-column label="操作" width="100">
+                    <template slot-scope="scope">
+                        <el-button type="danger" size="mini" @click="deleteTaskSystem(scope.row.id)">删除</el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+            
+            <h4>追加新译文</h4>
+            <el-form :inline="true">
+                <el-form-item label="系统">
+                    <el-input v-model="appendSystemForm.system_name" size="small" placeholder="输入系统名称"></el-input>
+                </el-form-item>
+                <el-form-item label="文件">
+                    <el-upload
+                        action=""
+                        :auto-upload="false"
+                        :on-change="handleAppendFileChange"
+                        :show-file-list="false"
+                        accept=".txt">
+                        <el-button size="small" :type="appendSystemForm.file ? 'success' : 'primary'" plain>
+                            {{ appendSystemForm.file ? appendSystemForm.file.name : '选择文件' }}
+                        </el-button>
+                    </el-upload>
+                </el-form-item>
+                <el-form-item>
+                    <el-button type="primary" size="small" @click="appendTaskSystem" :loading="appending">追加</el-button>
+                </el-form-item>
+            </el-form>
+        </el-dialog>
+
+        <!-- 对比弹窗 -->
+        <el-dialog title="选择对比用户" :visible.sync="showCompareDialog" width="400px">
+            <el-form label-width="100px">
+                <el-form-item label="用户 1">
+                    <el-select v-model="compareUser1">
+                        <el-option v-for="u in taskUsers" :key="u" :label="u" :value="u"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item label="用户 2">
+                    <el-select v-model="compareUser2">
+                        <el-option v-for="u in taskUsers" :key="u" :label="u" :value="u"></el-option>
+                    </el-select>
+                </el-form-item>
+            </el-form>
+            <span slot="footer" class="dialog-footer">
+                <el-button @click="showCompareDialog = false">取消</el-button>
+                <el-button type="primary" @click="startCompare">开始对比</el-button>
+            </span>
+        </el-dialog>
+
+    </div>
+
+    <!-- 引入 Vue 和 Element-UI 和 axios -->
+    <script src="https://unpkg.com/vue@2.6.14/dist/vue.js"></script>
+    <script src="https://unpkg.com/element-ui/lib/index.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>

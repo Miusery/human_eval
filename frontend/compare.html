@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>评测结果对比</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .compare-view {
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .compare-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .user-column {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px 0 rgba(0,0,0,.1);
+        }
+        .user-header {
+            text-align: center;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #409EFF;
+            margin-bottom: 20px;
+        }
+        .target-box {
+            margin-bottom: 30px;
+            border: 1px solid #EBEEF5;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .info-row {
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        .info-label {
+            font-weight: bold;
+            color: #606266;
+            display: inline-block;
+            width: 80px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" v-cloak class="compare-view">
+        <div class="eval-header" style="background:#fff; padding: 20px; border-radius: 8px; margin-bottom:20px; box-shadow: 0 2px 12px 0 rgba(0,0,0,.1);">
+            <el-button icon="el-icon-back" @click="closeWindow">关闭窗口</el-button>
+            <h2>评测结果对比 (任务ID: {{ taskId }})</h2>
+            <div class="eval-stats" v-if="evalData">
+                进度: <span class="highlight">{{ evalData.current_page }}</span> / {{ evalData.total_pages }}
+            </div>
+        </div>
+
+        <div v-if="evalData" style="background:#fff; padding: 20px; border-radius: 8px; margin-bottom:20px; box-shadow: 0 2px 12px 0 rgba(0,0,0,.1);">
+            <div class="source-panel">
+                <h3>原文</h3>
+                <div class="text-box source-text">
+                            <span v-for="(token, index) in evalData.source.tokens" :key="index" class="token">{{ token }}<span v-if="needsSpace(token)">&nbsp;</span></span>
+                        </div>
+            </div>
+        </div>
+
+        <div class="compare-grid" v-if="evalData" style="align-items: stretch;">
+            <!-- 用户1 -->
+            <div class="user-column">
+                <div class="user-header">
+                    <h3>{{ user1 }}</h3>
+                </div>
+            </div>
+
+            <!-- 用户2 -->
+            <div class="user-column">
+                <div class="user-header">
+                    <h3>{{ user2 }}</h3>
+                </div>
+            </div>
+            
+            <!-- 译文对比列表，跨越两列 -->
+            <div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 30px; position: relative;">
+                
+                <!-- 右键错误类型菜单 -->
+                <ul v-show="contextMenu.visible" :style="{left: contextMenu.x + 'px', top: contextMenu.y + 'px'}" class="context-menu" style="position: absolute; z-index: 1000; background: white; border: 1px solid #ccc; list-style: none; padding: 5px; margin: 0; box-shadow: 0 2px 12px 0 rgba(0,0,0,.1);">
+                    <li v-for="type in errorTypes" :key="type.id" @click="addErrorAnnotation(type.id)" style="padding: 5px 10px; cursor: pointer; display: flex; align-items: center;">
+                        <span class="color-box" :style="{backgroundColor: type.color, width: '12px', height: '12px', display: 'inline-block', marginRight: '8px'}"></span> {{ type.label }}
+                    </li>
+                </ul>
+
+                <div v-for="(target, tIdx) in evalData.targets" :key="'compare-'+tIdx" class="compare-grid">
+                    
+                    <!-- 用户1 的译文框 -->
+                    <div class="target-box" style="display: flex; flex-direction: column; margin-bottom: 0; height: 100%;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <h4>译文 - {{ target.system_name }}</h4>
+                            <el-button type="text" size="small" @click="toggleExpand('u1', tIdx)">
+                                {{ isExpanded('u1', tIdx) ? '收起' : '展开' }}
+                            </el-button>
+                        </div>
+                        
+                        <div v-show="isExpanded('u1', tIdx)" style="display: flex; flex-direction: column; flex-grow: 1;">
+                            <div class="text-box target-text"
+                                 @click="handleTokenClick($event, tIdx, user1)" 
+                                 @contextmenu.prevent="handleContextMenu($event, tIdx, user1)">
+                                <span v-for="(token, tokenIdx) in target.tokens" 
+                                      :key="tokenIdx" 
+                                      :class="getTokenClass(tIdx, tokenIdx, user1)"
+                                      :style="getTokenStyle(target.annotations[user1], tokenIdx)"
+                                      :data-idx="tokenIdx"
+                                      class="token target-token">{{ token }}<span v-if="needsSpace(token)" style="pointer-events: none;">&nbsp;</span></span>
+                            </div>
+                            
+                            <div style="margin-top: 15px; background: #f9fafc; padding: 10px; border-radius: 4px; flex-grow: 1; display: flex; flex-direction: column; gap: 10px;">
+                                <div class="info-row" v-if="evalType === 'DA'" style="display: flex; align-items: center; gap: 10px;">
+                                    <span class="info-label" style="white-space: nowrap;">DA 得分:</span> 
+                                    <el-input type="number" v-model="target.annotations[user1].da_score" min="0" max="100" @change="saveAnnotation(tIdx, user1)" size="small" placeholder="空" style="width: 120px;"></el-input>
+                                </div>
+                                <div class="info-row" v-if="evalType === 'RR'" style="display: flex; align-items: center; gap: 10px;">
+                                    <span class="info-label" style="white-space: nowrap;">RR 排序:</span> 
+                                    <el-input-number v-model="target.annotations[user1].rr_rank" :min="1" @change="saveAnnotation(tIdx, user1)" size="small" style="width: 120px;"></el-input-number>
+                                </div>
+                                <div class="info-row" style="display: flex; flex-direction: column; gap: 5px;">
+                                    <span class="info-label">备注:</span> 
+                                    <el-input type="textarea" v-model="target.annotations[user1].remark" placeholder="添加备注..." @input="saveAnnotation(tIdx, user1)" @blur="saveAnnotation(tIdx, user1)" :rows="2"></el-input>
+                                </div>
+                                <div class="info-row" v-if="target.annotations[user1].errors.length > 0">
+                                    <span class="info-label">标注错误:</span>
+                                    <div class="tags-container" style="margin-top: 5px;">
+                                        <div v-for="(err, errIdx) in target.annotations[user1].errors" 
+                                             :key="errIdx" 
+                                             class="error-tag"
+                                             :style="{ backgroundColor: getSeverityColor(err.severity) }"
+                                             @click="toggleSeverity(tIdx, errIdx, user1)"
+                                             style="cursor: pointer;">
+                                            <span class="err-text">"{{ getTokensText(target.tokens, err.start_idx, err.end_idx) }}"</span>
+                                            <span class="err-type">[{{ getErrorTypeLabel(err.error_type) }}]</span>
+                                            <i class="el-icon-close" @click.stop="removeError(tIdx, errIdx, user1)"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 用户2 的译文框 -->
+                    <div class="target-box" style="display: flex; flex-direction: column; margin-bottom: 0; height: 100%;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <h4>译文 - {{ target.system_name }}</h4>
+                            <el-button type="text" size="small" @click="toggleExpand('u2', tIdx)">
+                                {{ isExpanded('u2', tIdx) ? '收起' : '展开' }}
+                            </el-button>
+                        </div>
+                        
+                        <div v-show="isExpanded('u2', tIdx)" style="display: flex; flex-direction: column; flex-grow: 1;">
+                            <div class="text-box target-text"
+                                 @click="handleTokenClick($event, tIdx, user2)" 
+                                 @contextmenu.prevent="handleContextMenu($event, tIdx, user2)">
+                                <span v-for="(token, tokenIdx) in target.tokens" 
+                                      :key="tokenIdx" 
+                                      :class="getTokenClass(tIdx, tokenIdx, user2)"
+                                      :style="getTokenStyle(target.annotations[user2], tokenIdx)"
+                                      :data-idx="tokenIdx"
+                                      class="token target-token">{{ token }}<span v-if="needsSpace(token)" style="pointer-events: none;">&nbsp;</span></span>
+                            </div>
+                            
+                            <div style="margin-top: 15px; background: #f9fafc; padding: 10px; border-radius: 4px; flex-grow: 1; display: flex; flex-direction: column; gap: 10px;">
+                                <div class="info-row" v-if="evalType === 'DA'" style="display: flex; align-items: center; gap: 10px;">
+                                    <span class="info-label" style="white-space: nowrap;">DA 得分:</span> 
+                                    <el-input type="number" v-model="target.annotations[user2].da_score" min="0" max="100" @change="saveAnnotation(tIdx, user2)" size="small" placeholder="空" style="width: 120px;"></el-input>
+                                </div>
+                                <div class="info-row" v-if="evalType === 'RR'" style="display: flex; align-items: center; gap: 10px;">
+                                    <span class="info-label" style="white-space: nowrap;">RR 排序:</span> 
+                                    <el-input-number v-model="target.annotations[user2].rr_rank" :min="1" @change="saveAnnotation(tIdx, user2)" size="small" style="width: 120px;"></el-input-number>
+                                </div>
+                                <div class="info-row" style="display: flex; flex-direction: column; gap: 5px;">
+                                    <span class="info-label">备注:</span> 
+                                    <el-input type="textarea" v-model="target.annotations[user2].remark" placeholder="添加备注..." @input="saveAnnotation(tIdx, user2)" @blur="saveAnnotation(tIdx, user2)" :rows="2"></el-input>
+                                </div>
+                                <div class="info-row" v-if="target.annotations[user2].errors.length > 0">
+                                    <span class="info-label">标注错误:</span>
+                                    <div class="tags-container" style="margin-top: 5px;">
+                                        <div v-for="(err, errIdx) in target.annotations[user2].errors" 
+                                             :key="errIdx" 
+                                             class="error-tag"
+                                             :style="{ backgroundColor: getSeverityColor(err.severity) }"
+                                             @click="toggleSeverity(tIdx, errIdx, user2)"
+                                             style="cursor: pointer;">
+                                            <span class="err-text">"{{ getTokensText(target.tokens, err.start_idx, err.end_idx) }}"</span>
+                                            <span class="err-type">[{{ getErrorTypeLabel(err.error_type) }}]</span>
+                                            <i class="el-icon-close" @click.stop="removeError(tIdx, errIdx, user2)"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                </div>
+            </div>
+        </div>
+
+        <div class="eval-pagination" v-if="evalData" style="margin-bottom: 40px;">
+            <el-pagination
+                background
+                layout="prev, pager, next"
+                :total="evalData.total_pages"
+                :page-size="1"
+                :current-page.sync="evalData.current_page"
+                @current-change="loadPage">
+            </el-pagination>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@2.6.14/dist/vue.js"></script>
+    <script src="https://unpkg.com/element-ui/lib/index.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="/js/compare.js"></script>
+</body>
+</html>
