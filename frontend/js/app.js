@@ -418,8 +418,9 @@ new Vue({
                 const idx = parseInt(idxStr);
                 // 只有右键点击的词在已选中列表中，才触发菜单
                 if (this.selection.selectedTokens.includes(idx)) {
-                    this.contextMenu.x = e.clientX;
-                    this.contextMenu.y = e.clientY;
+                    // Use pageX/pageY to account for page scrolling
+                    this.contextMenu.x = e.pageX;
+                    this.contextMenu.y = e.pageY;
                     this.contextMenu.visible = true;
                 }
             }
@@ -534,7 +535,15 @@ new Vue({
         
         // --- Helpers ---
         getTokensText(tokens, start, end) {
-            return tokens.slice(start, end + 1).join(' ');
+            let result = '';
+            for (let i = start; i <= end; i++) {
+                result += tokens[i];
+                // 如果当前词不是最后一个，并且当前词是英文/数字类型，则补充一个空格
+                if (i < end && this.needsSpace(tokens[i])) {
+                    result += ' ';
+                }
+            }
+            return result;
         },
         getErrorTypeLabel(typeId) {
             const type = this.errorTypes.find(t => t.id === typeId);

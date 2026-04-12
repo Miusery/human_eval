@@ -87,7 +87,15 @@ new Vue({
             return {};
         },
         getTokensText(tokens, start, end) {
-            return tokens.slice(start, end + 1).join(' ');
+            let result = '';
+            for (let i = start; i <= end; i++) {
+                result += tokens[i];
+                // 如果当前词不是最后一个，并且当前词是英文/数字类型，则补充一个空格
+                if (i < end && this.needsSpace(tokens[i])) {
+                    result += ' ';
+                }
+            }
+            return result;
         },
         getErrorTypeLabel(typeId) {
             const type = this.errorTypes.find(t => t.id === typeId);
@@ -167,8 +175,9 @@ new Vue({
             if (idxStr !== null) {
                 const idx = parseInt(idxStr);
                 if (this.selection.selectedTokens.includes(idx)) {
-                    this.contextMenu.x = e.clientX;
-                    this.contextMenu.y = e.clientY;
+                    // Update position using page scroll offset to ensure it appears near the mouse cursor
+                    this.contextMenu.x = e.pageX;
+                    this.contextMenu.y = e.pageY;
                     this.contextMenu.visible = true;
                 }
             }

@@ -16,7 +16,6 @@
     { "id": "grammar", "label": "语法错误", "color": "#add8e6" },
     { "id": "faithfulness", "label": "忠实度", "color": "#98fb98" },
     { "id": "fluency", "label": "流畅度", "color": "#ffd700" },
-    { "id": "terminology", "label": "术语错误", "color": "#ffa07a" },
-    { "id": "xyh", "label": "谢宇豪", "color": "#ffa07a" }
+    { "id": "terminology", "label": "术语错误", "color": "#ffa07a" }
   ]
 }
