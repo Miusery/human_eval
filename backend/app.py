@@ -5,7 +5,7 @@ from backend.database import db
 from backend.models import System, Task, TaskSystem, Segment, TargetSegment, Annotation, ErrorAnnotation
 
 app = Flask(__name__, static_folder='../frontend')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///../data.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///../instance/data.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize DB
