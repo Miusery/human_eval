@@ -58,6 +58,7 @@
                                         <el-dropdown-item @click.native="manageTaskSystems(scope.row)">管理译文</el-dropdown-item>
                                         <el-dropdown-item @click.native="editTask(scope.row)">编辑任务</el-dropdown-item>
                                         <el-dropdown-item @click.native="openCompareDialog(scope.row)" v-if="isAdmin">双人对比</el-dropdown-item>
+                                        <el-dropdown-item @click.native="openMergeDialog(scope.row)" v-if="isAdmin">协同合并</el-dropdown-item>
                                         <el-dropdown-item @click.native="deleteTask(scope.row)" style="color: #F56C6C">删除任务</el-dropdown-item>
                                     </el-dropdown-menu>
                                 </el-dropdown>
@@ -314,6 +315,29 @@
             <span slot="footer" class="dialog-footer">
                 <el-button @click="showCompareDialog = false">取消</el-button>
                 <el-button type="primary" @click="startCompare">开始对比</el-button>
+            </span>
+        </el-dialog>
+
+        <!-- 协同合并配置弹窗 -->
+        <el-dialog title="协同合并分配配置" :visible.sync="showMergeDialog" width="600px">
+            <div style="margin-bottom: 15px; color: #606266; font-size: 13px;">
+                请指定不同区间的句子分配给哪个用户。未分配的区间将默认使用管理员自己的标注。
+            </div>
+            <div v-for="(rule, idx) in mergeRules" :key="idx" style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
+                <el-input-number v-model="rule.start" :min="1" size="small" style="width: 100px;" placeholder="起始段"></el-input-number>
+                <span>至</span>
+                <el-input-number v-model="rule.end" :min="1" size="small" style="width: 100px;" placeholder="结束段"></el-input-number>
+                <span>分配给</span>
+                <el-select v-model="rule.user" size="small" style="width: 150px;">
+                    <el-option v-for="u in taskUsers" :key="u" :label="u" :value="u"></el-option>
+                </el-select>
+                <el-button type="danger" icon="el-icon-delete" circle size="small" @click="removeMergeRule(idx)"></el-button>
+            </div>
+            <el-button type="dashed" icon="el-icon-plus" size="small" @click="addMergeRule" style="width: 100%;">添加分配规则</el-button>
+            
+            <span slot="footer" class="dialog-footer">
+                <el-button @click="showMergeDialog = false">取消</el-button>
+                <el-button type="primary" @click="startMerge">开始合并评测</el-button>
             </span>
         </el-dialog>
 

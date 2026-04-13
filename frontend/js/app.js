@@ -52,6 +52,11 @@ new Vue({
             compareUser2: '',
             compareTaskId: null,
             
+            // Merge (协同合并)
+            showMergeDialog: false,
+            mergeTaskId: null,
+            mergeRules: [],
+            
             // Evaluation View
             currentTask: null,
             evalData: null,
@@ -588,6 +593,44 @@ new Vue({
             }
             this.showCompareDialog = false;
             window.open(`/compare.html?task_id=${this.compareTaskId}&user1=${this.compareUser1}&user2=${this.compareUser2}`, '_blank');
+        },
+        
+        // --- Merge ---
+        async openMergeDialog(task) {
+            this.mergeTaskId = task.id;
+            this.mergeRules = [];
+            try {
+                const res = await axios.get(`/api/tasks/${task.id}/users`);
+                this.taskUsers = res.data;
+                if (this.taskUsers.length === 0) {
+                    return this.$message.warning('该任务目前没有任何标注用户');
+                }
+                this.showMergeDialog = true;
+            } catch (err) {
+                this.$message.error('加载用户失败');
+            }
+        },
+        addMergeRule() {
+            this.mergeRules.push({ start: 1, end: 1, user: '' });
+        },
+        removeMergeRule(index) {
+            this.mergeRules.splice(index, 1);
+        },
+        startMerge() {
+            // Validate rules
+            for (let rule of this.mergeRules) {
+                if (!rule.user) {
+                    return this.$message.error('请为每一条规则分配用户');
+                }
+                if (rule.start > rule.end) {
+                    return this.$message.error('起始段不能大于结束段');
+                }
+            }
+            this.showMergeDialog = false;
+            
+            // Encode rules as JSON and pass in URL
+            const rulesJson = encodeURIComponent(JSON.stringify(this.mergeRules));
+            window.open(`/merge.html?task_id=${this.mergeTaskId}&rules=${rulesJson}`, '_blank');
         }
     }
 });

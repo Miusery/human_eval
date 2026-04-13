@@ -1,5 +1,5 @@
 {
-  "current_user": "admin_user",
+  "current_user": "test_user_1",
   "users": {
     "admin_user": {
       "role": "admin"
